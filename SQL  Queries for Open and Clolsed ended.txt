@@ -1,0 +1,133 @@
+-- 1. Top 5 Brands by Receipts Scanned Among Users 21 and Over  
+
+SELECT p.BRAND, COUNT(t.RECEIPT_ID) AS total_receipts
+FROM TRANSACTION_TAKEHOME t
+JOIN USER_TAKEHOME u ON t.USER_ID = u.ID
+JOIN PRODUCTS_TAKEHOME p ON t.BARCODE = p.BARCODE
+WHERE (strftime('%Y', 'now') - strftime('%Y', u.BIRTH_DATE)) >= 21
+GROUP BY p.BRAND
+ORDER BY total_receipts DESC
+LIMIT 5;
+
+/*  
+Assumptions:
+
+Users' ages are calculated based on the difference between the current year and their birth year.
+Only receipts scanned by users 21 years or older are considered.
+BIRTH_DATE is in a format allowing extraction of the birth year. */
+
+
+
+-- 2. Top 5 Brands by Sales Among Users with Accounts for at Least Six Months
+
+SELECT p.BRAND, SUM(t.FINAL_SALE) AS total_sales
+FROM TRANSACTION_TAKEHOME t
+JOIN USER_TAKEHOME u ON t.USER_ID = u.ID
+JOIN PRODUCTS_TAKEHOME p ON t.BARCODE = p.BARCODE
+WHERE (strftime('%Y-%m', 'now') - strftime('%Y-%m', u.CREATED_DATE)) >= 6
+GROUP BY p.BRAND
+ORDER BY total_sales DESC
+LIMIT 5;
+
+/*
+
+Assumptions:
+
+Account age is determined by comparing the current date with the CREATED_DATE field.
+Users who have had an account for at least 6 months are considered.
+FINAL_SALE represents total sales value and is numeric. 
+
+*/
+
+-- 3. Percentage of Sales in Health & Wellness by Generation
+
+SELECT 
+    CASE 
+        WHEN (strftime('%Y', 'now') - strftime('%Y', u.BIRTH_DATE)) BETWEEN 18 AND 24 THEN 'Gen Z'
+        WHEN (strftime('%Y', 'now') - strftime('%Y', u.BIRTH_DATE)) BETWEEN 25 AND 40 THEN 'Millennials'
+        WHEN (strftime('%Y', 'now') - strftime('%Y', u.BIRTH_DATE)) BETWEEN 41 AND 56 THEN 'Gen X'
+        WHEN (strftime('%Y', 'now') - strftime('%Y', u.BIRTH_DATE)) >= 57 THEN 'Baby Boomers'
+        ELSE 'Unknown'
+    END AS generation,
+    SUM(CASE WHEN p.CATEGORY_1 = 'Health & Wellness' THEN t.FINAL_SALE ELSE 0 END) * 100.0 / SUM(t.FINAL_SALE) AS percentage_sales
+FROM TRANSACTION_TAKEHOME t
+JOIN USER_TAKEHOME u ON t.USER_ID = u.ID
+JOIN PRODUCTS_TAKEHOME p ON t.BARCODE = p.BARCODE
+WHERE t.FINAL_SALE IS NOT NULL
+GROUP BY generation
+ORDER BY percentage_sales DESC;
+
+/*
+
+Assumptions:
+
+Generations are categorized as follows:
+Gen Z: 18-24 years
+Millennials: 25-40 years
+Gen X: 41-56 years
+Baby Boomers: 57+ years
+The calculation is percentage-based, comparing FINAL_SALE for Health & Wellness against total sales.
+FINAL_SALE is a numeric field.
+
+*/
+
+-- Open-ended questions:
+
+-- 1. Who Are Fetch’s Power Users?
+
+SELECT u.ID, COUNT(t.RECEIPT_ID) AS total_receipts, SUM(t.FINAL_SALE) AS total_spent
+FROM TRANSACTION_TAKEHOME t
+JOIN USER_TAKEHOME u ON t.USER_ID = u.ID
+GROUP BY u.ID
+HAVING COUNT(t.RECEIPT_ID) > 50 
+   AND SUM(t.FINAL_SALE) > (SELECT AVG(FINAL_SALE) FROM TRANSACTION_TAKEHOME)
+ORDER BY total_receipts DESC, total_spent DESC
+LIMIT 10;
+
+/* 
+
+Assumptions:
+
+A power user is defined as someone who:
+Has scanned more than 50 receipts.
+Has above-average spending compared to all users.
+This query ranks the top 10 users based on receipt count and total spending.
+
+*/
+
+-- 2. Which is the Leading Brand in the Dips & Salsa Category?
+
+SELECT p.BRAND, SUM(t.FINAL_SALE) AS total_sales
+FROM TRANSACTION_TAKEHOME t
+JOIN PRODUCTS_TAKEHOME p ON t.BARCODE = p.BARCODE
+WHERE p.CATEGORY_3 = 'Dips & Salsa'
+GROUP BY p.BRAND
+ORDER BY total_sales DESC
+LIMIT 1;
+
+/*
+
+Assumptions:
+
+“Leading brand” is defined as the brand with the highest total sales.
+The category "Dips & Salsa" exists under CATEGORY_3 in the PRODUCTS_TAKEHOME table.
+
+*/
+
+-- 3. At What Percent Has Fetch Grown Year Over Year?
+
+WITH yearly_sales AS (
+    SELECT strftime('%Y', t.PURCHASE_DATE) AS year, SUM(t.FINAL_SALE) AS total_sales
+    FROM TRANSACTION_TAKEHOME t
+    WHERE t.FINAL_SALE IS NOT NULL
+    GROUP BY year
+)
+SELECT 
+    y1.year AS current_year, 
+    y2.year AS previous_year,
+    ((y1.total_sales - y2.total_sales) * 100.0 / y2.total_sales) AS growth_percentage
+FROM yearly_sales y1
+JOIN yearly_sales y2 ON y1.year = y2.year + 1
+ORDER BY y1.year DESC;
+
+
